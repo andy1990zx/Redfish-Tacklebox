@@ -10,7 +10,10 @@ File : rf_bios_action.py
 
 Brief : This script uses the redfish_utilities module to load default or change password of a system
 """
+import sys
 
+sys.path.append('.')
+sys.path.append('..')
 import argparse
 import redfish
 import redfish_utilities
