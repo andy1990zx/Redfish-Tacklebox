@@ -81,6 +81,9 @@ class RedfishCommonError(Exception):
     pass
 
 
+ov_target_values = ["None", "Pxe", "Usb", "Hdd", "BiosSetup"]
+
+
 def get_system_ids(context):
     """
     Finds the system collection and returns all of the member's identifiers
@@ -152,20 +155,29 @@ def get_system(context, system_id=None):
 
 def get_system_boot(context, system_id=None):
     """
-    Finds a system matching the given ID and returns its Boot object
+    Finds a system matching the given ID and returns its Boot objects
 
     Args:
         context: The Redfish client object with an open session
         system_id: The system to locate; if None, perform on the only system
 
     Returns:
-        The Boot object from the given system
+        Two boot object from the given system
+        0: System boot
+        1: if System boot support '@Redfish.Settings', return '@Redfish.Settings', eles None
     """
 
-    system = get_system(context, system_id)
-    if "Boot" not in system.dict:
-        raise RedfishSystemBootNotFoundError("System '{}' does not contain the boot object".format(system.dict["Id"]))
-    return system.dict["Boot"]
+    system1 = get_system(context, system_id)
+    system2 = None
+    if '@Redfish.Settings' in system1.dict:
+        system2 = context.get(system1.dict["@Redfish.Settings"]['SettingsObject']['@odata.id'])
+    if "Boot" not in system1.dict:
+        raise RedfishSystemBootNotFoundError("System '{}' does not contain the boot object".format(system1.dict["Id"]))
+
+    if system2 is None:
+        return system1.dict["Boot"], None
+    else:
+        return system1.dict["Boot"], system2.dict["Boot"]
 
 
 def set_system_boot(context, system_id=None, ov_target=None, ov_enabled=None, ov_mode=None, ov_uefi_target=None,
@@ -185,10 +197,8 @@ def set_system_boot(context, system_id=None, ov_target=None, ov_enabled=None, ov
     Returns:
         The response of the PATCH
     """
-
+    global ov_target_values
     # Check that the values themselves are supported by the schema
-    ov_target_values = ["None", "Pxe", "Floppy", "Cd", "Usb", "Hdd", "BiosSetup", "Utilities", "Diags",
-                        "UefiShell", "UefiTarget", "SDCard", "UefiHttp", "RemoteDrive", "UefiBootNext"]
     if ov_target is not None:
         if ov_target not in ov_target_values:
             raise ValueError(
@@ -205,6 +215,8 @@ def set_system_boot(context, system_id=None, ov_target=None, ov_enabled=None, ov
 
     # Locate the system
     system = get_system(context, system_id)
+    if '@Redfish.Settings' in system.dict:
+        system = context.get(system.dict["@Redfish.Settings"]['SettingsObject']['@odata.id'])
 
     # Build the payload
     payload = {"Boot": {}}
@@ -240,16 +252,16 @@ def print_system_boot(boot):
     print("")
 
     print("Boot Override Settings:")
-    boot_properties = ["BootSourceOverrideTarget", "BootSourceOverrideEnabled", "BootSourceOverrideMode",
-                       "UefiTargetBootSourceOverride", "BootNext"]
-    boot_strings = ["Target", "Enabled", "Mode", "UEFI Target", "Boot Next"]
+    boot_properties = ["BootSourceOverrideTarget", "BootSourceOverrideEnabled"]
+    boot_strings = ["Target", "Enabled"]
     for index, boot_property in enumerate(boot_properties):
         if boot_property in boot:
-            out_string = "  {}: {}".format(boot_strings[index], boot[boot_property])
+            out_string = '  {:7s} ({:25s}) : {}'.format(boot_strings[index], boot_properties[index],
+                                                        boot[boot_property])
             allow_string = ""
-            if boot_property + "@Redfish.AllowableValues" in boot:
-                allow_string = "; Allowable Values: {}".format(
-                    ", ".join(boot[boot_property + "@Redfish.AllowableValues"]))
+            # if boot_property + "@Redfish.AllowableValues" in boot:
+            #     allow_string = "; Allowable Values: {}".format(
+            #         ", ".join(boot[boot_property + "@Redfish.AllowableValues"]))
             print(out_string + allow_string)
 
     print("")
@@ -810,7 +822,8 @@ def reset_system_bios(context, system_id=None):
         action_info = context.get(actions['#Bios.ResetBios']['@Redfish.ActionInfo'])
         if 'Parameters' in action_info.dict:
             if len(action_info.dict['Parameters']) == 1:
-                if 'Name' in action_info.dict['Parameters'][0] and 'AllowableValues' in action_info.dict['Parameters'][0]:
+                if 'Name' in action_info.dict['Parameters'][0] and \
+                        'AllowableValues' in action_info.dict['Parameters'][0]:
                     if 'Reset' in action_info.dict['Parameters'][0]['AllowableValues']:
                         parameter = {action_info.dict['Parameters'][0]['Name']: 'Reset'}
                         result = context.post(reset_bios_uri, body=parameter)
