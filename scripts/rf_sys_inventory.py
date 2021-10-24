@@ -11,7 +11,10 @@ File : rf_sys_inventory.py
 Brief : This script uses the redfish_utilities module to dump system inventory
         information
 """
+import sys
 
+sys.path.append('.')
+sys.path.append('..')
 import argparse
 import redfish
 import redfish_utilities
